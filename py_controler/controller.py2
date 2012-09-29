@@ -1,0 +1,15 @@
+#!/usr/bin/env python2
+#-*- encoding:utf8 -*-
+""" Simple App to control a PAR using an arduino as DMX driver """
+
+import wx
+import os
+import serial
+
+class ControllerFrame(wx.Frame):
+    """ Class to handle all the three (six ?) slider controls and menu """
+
+    def __init__(self, parent):
+        wx.Frame.__init__(self, parent)
+
+
