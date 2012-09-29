@@ -1,0 +1,7 @@
+tmp/*
+build/*
+*/__pycache__/*
+*.pyc
+*.o
+*.elf
+*.hex
