@@ -19,14 +19,14 @@ class DMXController(wx.Frame):
 
     def __init__(self, parent):
         # Define hte size as a class atribute
-        self.size = (150, 500)
+        self.size = (300, 500)
         wx.Frame.__init__(self, parent, title="DMX Controller", size=self.size)
 
         # initial values for DMX
         self.values = {
-            'r': 0x42,
-            'g': 0x42,
-            'b': 0x42
+            'r': 0,
+            'g': 0,
+            'b': 0
         }
 
         self.baudrate = 9600
@@ -37,20 +37,29 @@ class DMXController(wx.Frame):
         # sliders will be contained in three vertical sizer stacked in a horizontal one
         self.sliders_sizer = wx.BoxSizer(wx.HORIZONTAL)
         # instanciate 3 sliders
-        self.slider_r = wx.Slider(self, -1, style=wx.SL_VERTICAL)
-        self.slider_g = wx.Slider(self, -1, style=wx.SL_VERTICAL)
-        self.slider_b = wx.Slider(self, -1, style=wx.SL_VERTICAL)
-        self.Bind(wx.EVT_SLIDER, self.SliderR, self.slider_r)
-        self.Bind(wx.EVT_SLIDER, self.SliderG, self.slider_g)
-        self.Bind(wx.EVT_SLIDER, self.SliderB, self.slider_r)
+        self.sliders = {}
+        self.sliders['r'] = wx.Slider(self, -1, style=wx.SL_VERTICAL | wx.SL_INVERSE)
+        self.sliders['g'] = wx.Slider(self, -1, style=wx.SL_VERTICAL | wx.SL_INVERSE)
+        self.sliders['b'] = wx.Slider(self, -1, style=wx.SL_VERTICAL | wx.SL_INVERSE)
+        self.Bind(wx.EVT_SLIDER, self.SliderR, self.sliders['r'])
+        self.Bind(wx.EVT_SLIDER, self.SliderG, self.sliders['g'])
+        self.Bind(wx.EVT_SLIDER, self.SliderB, self.sliders['b'])
 
         # Add the to the slider
-        for slider,name in [(self.slider_r,"R"), (self.slider_g,"G"), (self.slider_b,"B")]:
+        buttons = []
+        for slider,name,flash,stop_flash in [(self.sliders['r'],"&Red", self.FlashRed, self.StopFlashRed),
+                            (self.sliders['g'],"&Green", self.FlashGreen, self.StopFlashGreen),
+                            (self.sliders['b'],"&Blue", self.FlashBlue, self.StopFlashBlue)]:
             # create vertical sizer for slider+text
             sizer = wx.BoxSizer(wx.VERTICAL)
             sizer.Add(slider, 1, wx.EXPAND) # add the slider itself
-            # and the associated text
-            sizer.Add(wx.StaticText(self, label=name), 0, wx.EXPAND)
+
+            buttons.append(wx.Button(self, -1, name))
+            buttons[-1].Bind(wx.EVT_LEFT_DOWN, flash)
+            buttons[-1].Bind(wx.EVT_LEFT_UP, stop_flash)
+
+            sizer.Add(buttons[-1])
+
             # then stuck the sizer in the horizontal one
             self.sliders_sizer.Add(sizer, 1, wx.EXPAND)
             # set min and max values to slider
@@ -60,10 +69,42 @@ class DMXController(wx.Frame):
         # create a logger and add this to the horizontal sizer
         self.logger = wx.TextCtrl(self, size=(-1,50), style=wx.TE_MULTILINE | wx.TE_READONLY)
 
-        # Menu
-        self.menu = wx.Menu()
-        find_ports = self.menu.Append(-1, "&Find Serial Ports", "Try to find some ports in /dev/*")
+        # Ports Menu
+        self.ports_menu = wx.Menu()
+        find_ports = self.ports_menu.Append(-1, "&Find Serial Ports", "Try to find some ports in /dev/*")
         self.Bind(wx.EVT_MENU, self.FindSerialPorts, find_ports)
+
+
+        # macros menu
+        macros_menu = wx.Menu()
+        self.Bind(wx.EVT_MENU,
+                  self.Macro_BlackOut,
+                  macros_menu.Append(-1, "&BlackOut", "Turn all 3 channels to 0")
+                 )
+        self.Bind(wx.EVT_MENU,
+                  self.Macro_SpotLight,
+                  macros_menu.Append(-1, "&SpotLight", "Turn all 3 channels to max")
+                 )
+        macros_menu.AppendSeparator()
+        self.Bind(wx.EVT_MENU,
+                  self.Macro_Red,
+                  macros_menu.Append(-1, "&Red", "All red")
+                 )
+        self.Bind(wx.EVT_MENU,
+                  self.Macro_Green,
+                  macros_menu.Append(-1, "&Green", "All green")
+                 )
+        self.Bind(wx.EVT_MENU,
+                  self.Macro_Blue,
+                  macros_menu.Append(-1, "B&lue", "All blue")
+                 )
+
+
+
+        # main menu
+        main_menu = wx.Menu()
+        main_menu_exit = main_menu.Append(wx.ID_EXIT, "&Quit", "Quit this program")
+        self.Bind(wx.EVT_MENU, self.OnExit, main_menu_exit)
 
         # This will be the main sizer
         self.main_sizer = wx.BoxSizer(wx.VERTICAL)
@@ -73,13 +114,28 @@ class DMXController(wx.Frame):
         self.SetSizer(self.main_sizer)
         self.SetAutoLayout(1)
 
+        # init menubar
         menubar = wx.MenuBar()
-        menubar.Append(self.menu, "&Serial")
+        menubar.Append(main_menu, "&General")
+        menubar.Append(macros_menu, "&Macros")
+        menubar.Append(self.ports_menu, "&Serial")
         self.SetMenuBar(menubar)
 
         self.CreateStatusBar()
+
+        # Look up for ports before showing the window
+        self.FindSerialPorts()
+
+        # now, show it
         self.Show()
 
+    def OnExit(self, event):
+        """
+        Close any existent connection and terminate the program
+        """
+        if self.conn:
+            self.conn.close()
+        self.Close(True)
 
     def FindSerialPorts(self, event=None):
         """
@@ -89,20 +145,25 @@ class DMXController(wx.Frame):
         """
         self.serial_ports = {}
         serial_ports = glob("/dev/ttyACM*")+glob("/dev/ttyUSB*")
+        if len(serial_ports) == 1:
+            self.SelectPort(chosen_port=serial_ports[0])
+
         if len(serial_ports):
             self.logger.AppendText("{} serial ports found\n".format(len(serial_ports)))
 
+            self.ports_menu.AppendSeparator()
             for s in serial_ports:
-                this = self.menu.Append(-1, s, s)
+                this = self.ports_menu.Append(-1, s, s)
                 self.Bind(wx.EVT_MENU, self.SelectPort, this)
                 self.serial_ports[this.GetId()] = s
 
         else:
             self.logger.AppendText("I didn't find any opened serial port. You won't control anything\n")
 
-    def SelectPort(self, event):
+    def SelectPort(self, event=None, chosen_port=None):
         """ Init a serial connection on chosen serial port """
-        chosen_port = self.serial_ports[event.GetId()]
+        if not chosen_port:
+            chosen_port = self.serial_ports[event.GetId()]
         if self.conn:
             self.conn.close()
             self.conn = False
@@ -112,29 +173,90 @@ class DMXController(wx.Frame):
         except SerialException as e:
             self.logger.AppendText(e)
 
+    def send_values(self, values=None):
+        """ Send values from values parameter to arduino """
+        if not values:
+            values = self.values
+        try:
+            for c in ['r','g','b']:
+                self.conn.write(chr(values[c]))
+        except ValueError as e:
+            self.logger.AppendText(str(e))
 
-    def SliderR(self, event): self.ComputeSlider('R', event)
-    def SliderG(self, event): self.ComputeSlider('G', event)
-    def SliderB(self, event): self.ComputeSlider('B', event)
+    def SliderR(self, event): self.ComputeSlider('r', event)
+    def SliderG(self, event): self.ComputeSlider('g', event)
+    def SliderB(self, event): self.ComputeSlider('b', event)
 
     def ComputeSlider(self, slider, event):
+        """ Get the new value from slider and ressend order to arduino """
         if not self.conn:
             self.logger.AppendText("No connection \n")
         else:
-            if slider=='R':
-                value = self.slider_r.GetValue()
-            elif slider=='G':
-                value = self.slider_g.GetValue()
-            else:
-                value = self.slider_b.GetValue()
+            value = self.sliders[slider].GetValue()
 
-            self.values[slider.lower()] = value
+            self.values[slider] = value
 
-            try:
-                for c in ['r','g','b']:
-                    self.conn.write(char(self.values[c]))
-            except ValueError as e:
-                self.logger.AppendText(e)
+            # send new values to the arduino
+            self.send_values()
+
+
+    def align_sliders(self):
+        """ Put sliders at the right place according to self.values """
+        for s in self.values.keys():
+            self.sliders[s].SetValue(self.values[s])
+
+    ### Flashes ###
+
+    def Flash(self, chan, level):
+        values = {k:self.values[k] for k in self.values.keys()}
+        values[chan] = level
+        self.send_values(values)
+
+    def FlashRed(self, e): self.Flash('r', 255)
+    def FlashGreen(self, e): self.Flash('g', 255)
+    def FlashBlue(self, e): self.Flash('b', 255)
+
+    def StopFlashRed(self, e): self.Flash('r', self.values['r'])
+    def StopFlashGreen(self, e): self.Flash('g', self.values['g'])
+    def StopFlashBlue(self, e): self.Flash('b', self.values['b'])
+
+
+    ### Macros ###
+
+    def Macro_BlackOut(self, e):
+        """ Turn off all 3 channels """
+        self.values = {_:0 for _ in self.values.keys()}
+        self.align_sliders()
+        self.send_values()
+
+    def Macro_SpotLight(self, e):
+        """ Turn on all 3 channels """
+        self.values = {_:255 for _ in self.values.keys()}
+        self.align_sliders()
+        self.send_values()
+
+    def Macro_Red(self, e):
+        """ Turn all channels off and red chan to max """
+        self.values = {_:0 for _ in self.values.keys()}
+        self.values['r'] = 255
+        self.align_sliders()
+        self.send_values()
+
+    def Macro_Green(self, e):
+        """ Turn all channels off and green chan to max """
+        self.values = {_:0 for _ in self.values.keys()}
+        self.values['g'] = 255
+        self.align_sliders()
+        self.send_values()
+
+    def Macro_Blue(self, e):
+        """ Turn all channels off and blue chan to max """
+        self.values = {_:0 for _ in self.values.keys()}
+        self.values['b'] = 255
+        self.align_sliders()
+        self.send_values()
+
+
 
 if __name__=='__main__':
     app = wx.App(False)
