@@ -1,5 +1,5 @@
 tmp/*
-build/*
+*/build/*
 */__pycache__/*
 *.pyc
 *.o
