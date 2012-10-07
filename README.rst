@@ -8,6 +8,9 @@ More a proof of concept than anything else.
 
 Feel free to use (WTFPL inside).
 
-... it's too late to write a readme.
+For more info, see these articles (fr) :
 
-I promise i'll tidy this repo soon (probably later this day, midnight is now passed)...
+- http://blog.matael.org/writing/arduino-et-dmx/
+- http://blog.matael.org/writing/un-controleur-dmx-en-python/
+
+

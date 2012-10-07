@@ -45,8 +45,6 @@ void setup()
 	Serial.begin(9600);
 }
 
-byte r, g, b;
-
 void loop()
 {
 	if (Serial.available() >= 3) {
@@ -54,5 +52,4 @@ void loop()
 		DmxSimple.write(CHAN_GREEN, Serial.read());
 		DmxSimple.write(CHAN_BLUE, Serial.read());
 	}
-	delay(2);
 }

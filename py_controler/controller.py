@@ -129,6 +129,7 @@ class DMXController(wx.Frame):
         # now, show it
         self.Show()
 
+
     def OnExit(self, event):
         """
         Close any existent connection and terminate the program
@@ -137,17 +138,23 @@ class DMXController(wx.Frame):
             self.conn.close()
         self.Close(True)
 
+
     def FindSerialPorts(self, event=None):
         """
         Just glob over /dev/tty{ACM,USB}* to find the arduino serial port
 
         I could have used serial.tools.list_ports.comports(), but it's simpler like that
         """
+
+        # First get a list as in ls /dev/tty{ACM,USB}*
         self.serial_ports = {}
         serial_ports = glob("/dev/ttyACM*")+glob("/dev/ttyUSB*")
+
+        # if only one item, open a connection on it
         if len(serial_ports) == 1:
             self.SelectPort(chosen_port=serial_ports[0])
 
+        # if some ports found, tell the number to user through the logger and add them to menu
         if len(serial_ports):
             self.logger.AppendText("{} serial ports found\n".format(len(serial_ports)))
 
@@ -160,29 +167,41 @@ class DMXController(wx.Frame):
         else:
             self.logger.AppendText("I didn't find any opened serial port. You won't control anything\n")
 
+
     def SelectPort(self, event=None, chosen_port=None):
         """ Init a serial connection on chosen serial port """
         if not chosen_port:
             chosen_port = self.serial_ports[event.GetId()]
+
+        # first, close current connection if exists
         if self.conn:
             self.conn.close()
             self.conn = False
+
+        # then try to open a new one on the selected port
         self.logger.AppendText("Trying to initalize connection through {}\n".format(chosen_port))
         try:
             self.conn = Serial(chosen_port, self.baudrate, timeout=1)
         except SerialException as e:
             self.logger.AppendText(e)
 
+
     def send_values(self, values=None):
         """ Send values from values parameter to arduino """
+
+        # if not any specific set of values specified, just use self.values
         if not values:
             values = self.values
+
+        # send each value through connection and tell error if any (in logger)
         try:
             for c in ['r','g','b']:
                 self.conn.write(chr(values[c]))
         except ValueError as e:
             self.logger.AppendText(str(e))
 
+
+    # Redirection functions
     def SliderR(self, event): self.ComputeSlider('r', event)
     def SliderG(self, event): self.ComputeSlider('g', event)
     def SliderB(self, event): self.ComputeSlider('b', event)
@@ -201,17 +220,22 @@ class DMXController(wx.Frame):
 
 
     def align_sliders(self):
-        """ Put sliders at the right place according to self.values """
+        """
+        Put sliders at the right place according to self.values
+
+        if self.values is durabily modified, move the slider to fit
+        """
         for s in self.values.keys():
             self.sliders[s].SetValue(self.values[s])
 
     ### Flashes ###
-
     def Flash(self, chan, level):
+        """ put one level at "level" and resend all """
         values = {k:self.values[k] for k in self.values.keys()}
         values[chan] = level
         self.send_values(values)
 
+    # redirection functions
     def FlashRed(self, e): self.Flash('r', 255)
     def FlashGreen(self, e): self.Flash('g', 255)
     def FlashBlue(self, e): self.Flash('b', 255)
@@ -222,7 +246,6 @@ class DMXController(wx.Frame):
 
 
     ### Macros ###
-
     def Macro_BlackOut(self, e):
         """ Turn off all 3 channels """
         self.values = {_:0 for _ in self.values.keys()}
